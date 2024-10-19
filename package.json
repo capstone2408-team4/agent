@@ -1,0 +1,13 @@
+{
+  "name": "agent",
+  "version": "0.1.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {},
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "rrweb": "^2.0.0-alpha.4"
+  }
+}
