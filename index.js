@@ -1,12 +1,18 @@
 import * as rrweb from 'rrweb';
+import { v4 as uuid } from 'uuid';
 
 class ProvidenceAgent {
   constructor(options) {
+    if (!options.backendUrl || !options.projectId) {
+      throw new Error('backendUrl and projectId are required');
+    }
+
     this.options = options;
     this.stopFn = null;
     this.events = [];
     this.saveInterval = null;
-    // this.projectUuid
+    this.projectId = options.projectId;
+    this.sessionId = uuid();
   }
 
   startRecord() {
@@ -19,7 +25,7 @@ class ProvidenceAgent {
       emit: (event) => {
         this.events.push(event);
 
-        // If a callback was provided for this config property, execute it
+        // Optional callback to execute for each event recorded
         if (typeof this.options.onEventRecorded === 'function') {
           this.options.onEventRecorded(event);
         }
@@ -48,7 +54,11 @@ class ProvidenceAgent {
   sendBatch() {
     if (this.events.length === 0) return;
 
-    const body = JSON.stringify({ events: this.events });
+    const body = JSON.stringify({
+      projectId: this.projectId,
+      sessionId: this.sessionId,
+      events: this.events
+    });
     this.events = [];
 
     fetch(this.options.backendUrl, {
