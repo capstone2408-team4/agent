@@ -34,6 +34,8 @@ class ProvidenceAgent {
 
     // Save events every 5 seconds
     this.saveInterval = setInterval(() => this.sendBatch(), 5000);
+
+    console.log(`Started recording for session ${this.sessionId}`);
   }
 
   stopRecord() {
@@ -49,6 +51,8 @@ class ProvidenceAgent {
 
     // Send any remaining events
     this.sendBatch();
+
+    console.log(`Stopped recording for session ${this.sessionId}`);
   }
 
   sendBatch() {
