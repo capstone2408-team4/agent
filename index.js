@@ -3,16 +3,16 @@ import { v4 as uuid } from 'uuid';
 
 class ProvidenceAgent {
   constructor(options) {
-    if (!options.backendUrl || !options.projectId) {
-      throw new Error('backendUrl and projectId are required');
+    if (!options.backendUrl || !options.projectID) {
+      throw new Error('backendUrl and projectID are required');
     }
 
     this.options = options;
     this.stopFn = null;
     this.events = [];
     this.saveInterval = null;
-    this.projectId = options.projectId;
-    this.sessionId = uuid();
+    this.projectID = options.projectID;
+    this.sessionID = uuid();
   }
 
   startRecord() {
@@ -35,7 +35,7 @@ class ProvidenceAgent {
     // Save events every 5 seconds
     this.saveInterval = setInterval(() => this.sendBatch(), 5000);
 
-    console.log(`Started recording for session ${this.sessionId}`);
+    console.log(`Started recording for session ${this.sessionID}`);
   }
 
   stopRecord() {
@@ -52,7 +52,7 @@ class ProvidenceAgent {
     // Send any remaining events
     this.sendBatch();
 
-    console.log(`Stopped recording for session ${this.sessionId}`);
+    console.log(`Stopped recording for session ${this.sessionID}`);
   }
 
   sendBatch() {
@@ -62,8 +62,8 @@ class ProvidenceAgent {
     this.events = [];
 
     const body = JSON.stringify({
-      projectId: this.projectId,
-      sessionId: this.sessionId,
+      projectID: this.projectID,
+      sessionID: this.sessionID,
       events: eventsToSend
     });
 
@@ -78,7 +78,7 @@ class ProvidenceAgent {
       if (!response.ok) {
         throw new Error(`HTTP error! Status: ${response.status}`);
       }
-      console.log(`Sent ${eventsToSend.length} events for session ${this.sessionId}`);
+      console.log(`Sent ${eventsToSend.length} events for session ${this.sessionID}`);
     })
     .catch(error => {
       console.error('Error sending events batch:', error);
