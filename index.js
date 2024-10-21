@@ -58,12 +58,14 @@ class ProvidenceAgent {
   sendBatch() {
     if (this.events.length === 0) return;
 
+    const eventsToSend = [...this.events];
+    this.events = [];
+
     const body = JSON.stringify({
       projectId: this.projectId,
       sessionId: this.sessionId,
-      events: this.events
+      events: eventsToSend
     });
-    this.events = [];
 
     fetch(this.options.backendUrl, {
       method: 'POST',
@@ -72,8 +74,17 @@ class ProvidenceAgent {
       },
       body,
     })
-    .then(response => console.log(response))
-    .catch(error => console.error('Error sending events batch:', error));
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
+      console.log(`Sent ${eventsToSend.length} events for session ${this.sessionId}`);
+    })
+    .catch(error => {
+      console.error('Error sending events batch:', error);
+      // Add the events back to the queue for next try
+      this.events = [...eventsToSend, ...this.events];
+    })
   }
 }
 
