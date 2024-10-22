@@ -1,12 +1,18 @@
 import * as rrweb from 'rrweb';
+import { v4 as uuid } from 'uuid';
 
 class ProvidenceAgent {
   constructor(options) {
+    if (!options.backendUrl || !options.projectID) {
+      throw new Error('backendUrl and projectID are required');
+    }
+
     this.options = options;
     this.stopFn = null;
     this.events = [];
     this.saveInterval = null;
-    // this.projectUuid
+    this.projectID = options.projectID;
+    this.sessionID = uuid();
   }
 
   startRecord() {
@@ -19,7 +25,7 @@ class ProvidenceAgent {
       emit: (event) => {
         this.events.push(event);
 
-        // If a callback was provided for this config property, execute it
+        // Optional callback to execute for each event recorded
         if (typeof this.options.onEventRecorded === 'function') {
           this.options.onEventRecorded(event);
         }
@@ -28,6 +34,8 @@ class ProvidenceAgent {
 
     // Save events every 5 seconds
     this.saveInterval = setInterval(() => this.sendBatch(), 5000);
+
+    console.log(`Started recording for session ${this.sessionID}`);
   }
 
   stopRecord() {
@@ -43,13 +51,21 @@ class ProvidenceAgent {
 
     // Send any remaining events
     this.sendBatch();
+
+    console.log(`Stopped recording for session ${this.sessionID}`);
   }
 
   sendBatch() {
     if (this.events.length === 0) return;
 
-    const body = JSON.stringify({ events: this.events });
+    const eventsToSend = [...this.events];
     this.events = [];
+
+    const body = JSON.stringify({
+      projectID: this.projectID,
+      sessionID: this.sessionID,
+      events: eventsToSend
+    });
 
     fetch(this.options.backendUrl, {
       method: 'POST',
@@ -58,8 +74,17 @@ class ProvidenceAgent {
       },
       body,
     })
-    .then(response => console.log(response))
-    .catch(error => console.error('Error sending events batch:', error));
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
+      console.log(`Sent ${eventsToSend.length} events for session ${this.sessionID}`);
+    })
+    .catch(error => {
+      console.error('Error sending events batch:', error);
+      // Add the events back to the queue for next try
+      this.events = [...eventsToSend, ...this.events];
+    })
   }
 }
 

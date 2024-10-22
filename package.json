@@ -8,6 +8,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "rrweb": "^2.0.0-alpha.4"
+    "rrweb": "^2.0.0-alpha.4",
+    "uuid": "^10.0.0"
   }
 }
