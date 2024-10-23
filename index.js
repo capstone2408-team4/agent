@@ -130,8 +130,11 @@ class ProvidenceAgent {
   }
 
   interceptXHR() {
+    const self = this;
+
     XMLHttpRequest.prototype.open = (...args) => {
       const [method, url] = args;
+      const xhrInstance = this; // this is the xhr instance
       const networkEventObj = { type: 50, data: {} };
 
       const urlString = typeof url === 'string' ? url : url?.toString() || '';
@@ -142,16 +145,17 @@ class ProvidenceAgent {
         requestMadeAt: Date.now(),
       }
 
-      this.addEventListener('load', function() {
+      xhrInstance.addEventListener('load', function() {
         const currentTime = Date.now();
         networkEventObj.timestamp = currentTime;
         networkEventObj.data.responseReceivedAt = currentTime;
         networkEventObj.data.latency = currentTime - networkEventObj.data.requestMadeAt;
         networkEventObj.data.status = this.status;
-        this.events.push(networkEventObj);
+        self.events.push(networkEventObj);
+        console.log('XHR Request Captured:', networkEventObj);
       });
 
-      return this.originalXHROpen.apply(this, args);
+      return self.originalXHROpen.apply(xhrInstance, args);
     }
   }
 
