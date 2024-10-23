@@ -13,10 +13,11 @@ class ProvidenceAgent {
     this.saveInterval = null;
     this.projectID = options.projectID;
     this.sessionID = uuid();
+    this.boundVisibilityHandler = null;
 
     // Store original implementations before we override them
     // globalThis.fetch is an alias for window.fetch (gpt says it is 'best practice')
-    this.originalFetch = window.fetch;
+    this.originalFetch = window.fetch.bind(window);
     this.originalXHROpen = XMLHttpRequest.prototype.open;
     this.originalWebSocket = window.WebSocket;
   }
@@ -45,8 +46,9 @@ class ProvidenceAgent {
     // Save events every 5 seconds
     this.saveInterval = setInterval(() => this.sendBatch(), 5000);
 
-    // Handle visiblity changes
-    document.addEventListener('visibilitychange', this.handleVisibilityChange.bind(this));
+    // Handle visibility changes with stored bound handler
+    this.boundVisibilityHandler = this.handleVisibilityChange.bind(this);
+    document.addEventListener('visibilitychange', this.boundVisibilityHandler);
 
     console.log(`Started recording for session ${this.sessionID}`);
   }
@@ -65,8 +67,11 @@ class ProvidenceAgent {
     // Restore original network implementations
     this.restoreNetworkImplementations();
 
-    // Remove visibility chcange listener
-    document.removeEventListener('visibilitychange', this.handleVisibilityChange.bind(this));
+    // Remove visibility change listener using stored bound handler
+    if (this.boundVisibilityHandler) {
+      document.removeEventListener('visibilitychange', this.boundVisibilityHandler);
+      this.boundVisibilityHandler = null;
+    }
 
     // Send any remaining events
     this.sendBatch();
@@ -94,11 +99,10 @@ class ProvidenceAgent {
       this.handleFetchRequest(resource, config, networkEventObj);
 
       const response = await this.originalFetch(resource, config);
-      this.handleFetchRequest(response, networkEventObj);
+      this.handleFetchResponse(response, networkEventObj);
 
       this.events.push(networkEventObj);
       return response;
-
     }
   }
 
@@ -131,10 +135,10 @@ class ProvidenceAgent {
 
   interceptXHR() {
     const self = this;
+    const originalOpen = this.originalXHROpen;
 
-    XMLHttpRequest.prototype.open = (...args) => {
+    XMLHttpRequest.prototype.open = function(...args) {
       const [method, url] = args;
-      const xhrInstance = this; // this is the xhr instance
       const networkEventObj = { type: 50, data: {} };
 
       const urlString = typeof url === 'string' ? url : url?.toString() || '';
@@ -145,7 +149,7 @@ class ProvidenceAgent {
         requestMadeAt: Date.now(),
       }
 
-      xhrInstance.addEventListener('load', function() {
+      this.addEventListener('load', function() {
         const currentTime = Date.now();
         networkEventObj.timestamp = currentTime;
         networkEventObj.data.responseReceivedAt = currentTime;
@@ -155,14 +159,16 @@ class ProvidenceAgent {
         console.log('XHR Request Captured:', networkEventObj);
       });
 
-      return self.originalXHROpen.apply(xhrInstance, args);
+      return originalOpen.apply(this, args);
     }
   }
 
   interceptWebSocket() {
     const self = this;
+    const OriginalWebSocket = this.originalWebSocket;
+
     window.WebSocket = function(url, protocols) {
-      const ws = new self.originalWebSocket(url, protocols);
+      const ws = new OriginalWebSocket(url, protocols);
       const urlString = url.toString();
 
       ws.addEventListener('open', () => {
@@ -170,7 +176,7 @@ class ProvidenceAgent {
           type: 50,
           timestamp: Date.now(),
           data: {
-            urlString,
+            url: urlString,
             type: 'WebSocket',
             event: 'open',
           },
@@ -202,7 +208,7 @@ class ProvidenceAgent {
         });
       });
 
-      const originalSend = ws.send;
+      const originalSend = ws.send.bind(ws);
       ws.send = function(data) {
         self.events.push({
           type: 50,
@@ -223,7 +229,7 @@ class ProvidenceAgent {
 
   restoreNetworkImplementations() {
     window.fetch = this.originalFetch;
-    XMLHttpRequest.prototype.open = this.originalWebSocket;
+    XMLHttpRequest.prototype.open = this.originalXHROpen;
     window.WebSocket = this.originalWebSocket;
   }
 
