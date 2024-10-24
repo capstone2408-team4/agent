@@ -122,7 +122,7 @@ class ProvidenceAgent {
         if (resource === this.options.backendUrl) {
           return this.originalFetch(resource, config);
         }
-
+  
         console.log('[Agent] Fetch intercepted:', {
           url: resource instanceof Request ? resource.url : resource,
           method: config?.method || 'GET'
@@ -140,7 +140,7 @@ class ProvidenceAgent {
           status: networkEventObj.data.status,
           latency: networkEventObj.data.latency
         });
-
+  
         this.events.push(networkEventObj);
         return response;
       } catch (error) {
@@ -155,7 +155,6 @@ class ProvidenceAgent {
             url: args[0]?.toString() || 'unknown'
           }
         });
-
         throw error;
       }
     }
@@ -249,14 +248,18 @@ class ProvidenceAgent {
   }
 
   interceptWebSocket() {
+    console.log('[Agent] Setting up WebSocket interceptor');
     const self = this;
     const OriginalWebSocket = this.originalWebSocket;
 
     window.WebSocket = function(url, protocols) {
+      console.log('[Agent] WebSocket connection initiated:', { url, protocols });
+
       const ws = new OriginalWebSocket(url, protocols);
       const urlString = url.toString();
 
       ws.addEventListener('open', () => {
+        console.log('[Agent] WebSocket opened:', { url: urlString });
         self.events.push({
           type: 50,
           timestamp: Date.now(),
@@ -269,6 +272,13 @@ class ProvidenceAgent {
       });
 
       ws.addEventListener('message', (event) => {
+        console.log('[Agent] WebSocket message received:', { 
+          url: urlString, 
+          dataType: typeof event.data,
+          dataPreview: typeof event.data === 'string' ? 
+            event.data.slice(0, 100) : 'Binary data'
+        });
+
         self.events.push({
           type: 50,
           timestamp: Date.now(),
@@ -281,7 +291,12 @@ class ProvidenceAgent {
         });
       });
 
-      ws.addEventListener('close', () => {
+      ws.addEventListener('close', (event) => {
+        console.log('[Agent] WebSocket closed:', { 
+          url: urlString,
+          code: event.code,
+          reason: event.reason
+        });
         self.events.push({
           type: 50,
           timestamp: Date.now(),
@@ -289,12 +304,39 @@ class ProvidenceAgent {
             url: urlString,
             type: 'WebSocket',
             event: 'close',
+            code: event.code,
+            reason: event.reason
+          },
+        });
+      });
+
+      ws.addEventListener('error', (error) => {
+        console.log('[Agent] WebSocket error:', { 
+          url: urlString,
+          error: error.message || 'Unknown error'
+        });
+
+        self.events.push({
+          type: 50,
+          timestamp: Date.now(),
+          data: {
+            url: urlString,
+            type: 'WebSocket',
+            event: 'error',
+            error: error.message || 'Unknown error'
           },
         });
       });
 
       const originalSend = ws.send.bind(ws);
       ws.send = function(data) {
+        console.log('[Agent] WebSocket message sent:', {
+          url: urlString,
+          dataType: typeof data,
+          dataPreview: typeof data === 'string' ? 
+            data.slice(0, 100) : 'Binary data'
+        });
+
         self.events.push({
           type: 50,
           timestamp: Date.now(),
@@ -326,32 +368,32 @@ class ProvidenceAgent {
           this.stopFn();
           this.stopFn = null;
         }
-
+  
         if (this.saveInterval) {
           clearInterval(this.saveInterval);
           this.saveInterval = null;
         }
-
+  
         // Send any pending events
         this.sendBatch();
-
+  
         // Set up 15 second timer for full teardown minus visibility change listener
         this.visibilityTimeout = setTimeout(() => {
           console.log('[Agent] Visibility timeout reached - performing interceptor reset');
           this.visibilityTimeout = null;
-
+  
           // Restore original network implementations
           this.restoreNetworkImplementations();
-
+  
         }, this.VISIBILITY_TIMEOUT_MS);
-
+  
       } else if (document.visibilityState === 'visible') { // User has returned to the tab
         // Clear timeout if it exists
         if (this.visibilityTimeout) { // User returned before the timeout
           console.log('[Agent] Visibility restored before timeout - continuing recording');
           clearTimeout(this.visibilityTimeout);
           this.visibilityTimeout = null;
-
+  
           // Restart rrweb recording and save interval
           this.stopFn = rrweb.record({
             emit: (event) => {
@@ -361,9 +403,8 @@ class ProvidenceAgent {
               }
             },
           });
-
+  
           this.saveInterval = setInterval(() => this.sendBatch(), 5000);
-
         } else { // User returned after the timeout has passed
           console.log('[Agent] Visibility restored after timeout - starting new session');
           this.sessionID = uuid();
@@ -371,7 +412,7 @@ class ProvidenceAgent {
         }
       }
     } catch (error) {
-      console.log('[Agent] Error handling visibility change:', error);
+      console.error('[Agent] Error handling visibility change:', error);
       // Attempt to restore to a known good state
       this.stopRecord();
       this.startRecord();
