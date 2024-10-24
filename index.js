@@ -418,6 +418,7 @@ class ProvidenceAgent {
       console.error('[Agent] Error handling visibility change:', error);
       // Attempt to restore to a known good state
       this.stopRecord();
+      this.sessionID = uuid();
       this.startRecord();
     }
   }
