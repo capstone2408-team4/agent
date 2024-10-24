@@ -35,6 +35,7 @@ class ProvidenceAgent {
 
     // Full cleanup on page unload
     window.addEventListener('unload', () => {
+      console.log('[Agent] Unloading page - stopping recording');
       if (this.boundVisibilityHandler) {
         document.removeEventListener('visibilitychange', this.boundVisibilityHandler);
         this.boundVisibilityHandler = null;
