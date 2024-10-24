@@ -20,6 +20,27 @@ class ProvidenceAgent {
     this.originalFetch = window.fetch.bind(window);
     this.originalXHROpen = XMLHttpRequest.prototype.open;
     this.originalWebSocket = window.WebSocket;
+
+    // Visibility config
+    if (this.visibilityTimeout) {
+      clearTimeout(this.visibilityTimeout);
+    }
+    this.visibilityTimeout = null;
+    this.VISIBILITY_TIMEOUT_MS = 15000; // 15 seconds in milliseconds
+
+    // Cleanup any existing intervals
+    if (this.saveInterval) {
+      clearInterval(this.saveInterval);
+    }
+
+    // Full cleanup on page unload
+    window.addEventListener('unload', () => {
+      if (this.boundVisibilityHandler) {
+        document.removeEventListener('visibilitychange', this.boundVisibilityHandler);
+        this.boundVisibilityHandler = null;
+      }
+      this.stopRecord();
+    });
   }
 
   startRecord() {
@@ -54,6 +75,11 @@ class ProvidenceAgent {
   }
 
   stopRecord() {
+    if (this.visibilityTimeout) {
+      clearTimeout(this.visibilityTimeout);
+      this.visibilityTimeout = null;
+    }
+
     if (this.stopFn) {
       this.stopFn();
       this.stopFn = null;
@@ -234,15 +260,63 @@ class ProvidenceAgent {
   }
 
   handleVisibilityChange() {
-    if (document.visibilityState === 'hidden') {
-      // User has switched tabs or minimized window
+    try {
+      if (document.visibilityState === 'hidden') { // User has switched tabs or minimized window
+        // Pause recording but keep interceptors alive
+        if (this.stopFn) {
+          this.stopFn();
+          this.stopFn = null;
+        }
+
+        if (this.saveInterval) {
+          clearInterval(this.saveInterval);
+          this.saveInterval = null;
+        }
+
+        // Send any pending events
+        this.sendBatch();
+
+        // Set up 15 second timer for full teardown minus visibility change listener
+        this.visibilityTimeout = setTimeout(() => {
+          console.log('[Agent] Visibility timeout reached - performing interceptor reset');
+          this.visibilityTimeout = null;
+
+          // Restore original network implementations
+          this.restoreNetworkImplementations();
+
+        }, this.VISIBILITY_TIMEOUT_MS);
+
+      } else if (document.visibilityState === 'visible') { // User has returned to the tab
+        // Clear timeout if it exists
+        if (this.visibilityTimeout) { // User returned before the timeout
+          console.log('[Agent] Visibility restored before timeout - continuing recording');
+          clearTimeout(this.visibilityTimeout);
+          this.visibilityTimeout = null;
+
+          // Restart rrweb recording and save interval
+          this.stopFn = rrweb.record({
+            emit: (event) => {
+              this.events.push(event);
+              if (typeof this.options.onEventRecorded === 'function') {
+                this.options.onEventRecorded(event);
+              }
+            },
+          });
+
+          this.saveInterval = setInterval(() => this.sendBatch(), 5000);
+
+        } else { // User returned after the timeout has passed
+          console.log('[Agent] Visibility restored after timeout - starting new session');
+          this.sessionID = uuid();
+          this.startRecord();
+        }
+      }
+    } catch (error) {
+      console.log('[Agent] Error handling visibility change:', error);
+      // Attempt to restore to a known good state
       this.stopRecord();
-    } else if (document.visibilityState === 'visible') {
-      // User has returned to the tab
       this.startRecord();
     }
-    // Send any pending events
-    this.sendBatch();
   }
 
   sendBatch() {
