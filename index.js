@@ -112,23 +112,51 @@ class ProvidenceAgent {
   }
 
   interceptFetch() {
+    console.log('[Agent] Setting up fetch interceptor');
     window.fetch = async (...args) => {
-      let [resource, config] = args;
+      try {
+        let [resource, config] = args;
 
-      // Don't capture our own recording requests
-      if (resource === this.options.backendUrl) {
-        return this.originalFetch(resource, config);
+        // Don't capture our own recording requests
+        if (resource === this.options.backendUrl) {
+          return this.originalFetch(resource, config);
+        }
+
+        console.log('[Agent] Fetch intercepted:', {
+          url: resource instanceof Request ? resource.url : resource,
+          method: config?.method || 'GET'
+        });
+  
+        // communicate to AI that 'type 50 is a network request'
+        const networkEventObj = { type: 50, data: {} };
+        this.handleFetchRequest(resource, config, networkEventObj);
+  
+        const response = await this.originalFetch(resource, config);
+        this.handleFetchResponse(response, networkEventObj);
+  
+        console.log('[Agent] Fetch completed:', {
+          url: networkEventObj.data.url,
+          status: networkEventObj.data.status,
+          latency: networkEventObj.data.latency
+        });
+
+        this.events.push(networkEventObj);
+        return response;
+      } catch (error) {
+        console.error('[Agent] Error in fetch interceptor:', error);
+        // Log error event
+        this.events.push({
+          type: 50,
+          timestamp: Date.now(),
+          data: {
+            type: 'FETCH',
+            error: error.message,
+            url: args[0]?.toString() || 'unknown'
+          }
+        });
+
+        throw error;
       }
-
-      // communicate to AI that 'type 50 is a network request'
-      const networkEventObj = { type: 50, data: {} };
-      this.handleFetchRequest(resource, config, networkEventObj);
-
-      const response = await this.originalFetch(resource, config);
-      this.handleFetchResponse(response, networkEventObj);
-
-      this.events.push(networkEventObj);
-      return response;
     }
   }
 
@@ -157,16 +185,22 @@ class ProvidenceAgent {
     networkEventObj.data.responseReceivedAt = currentTime;
     networkEventObj.data.latency = currentTime - networkEventObj.data.requestMadeAt;
     networkEventObj.data.status = response.status;
+
+    if (!response.ok) {
+      networkEventObj.data.error = `HTTP Error ${response.status}`;
+    }
   }
 
   interceptXHR() {
+    console.log('[Agent] Setting up XHR interceptor');
     const self = this;
     const originalOpen = this.originalXHROpen;
 
     XMLHttpRequest.prototype.open = function(...args) {
       const [method, url] = args;
-      const networkEventObj = { type: 50, data: {} };
+      console.log('[Agent] XHR intercepted:', { method, url });
 
+      const networkEventObj = { type: 50, data: {} };
       const urlString = typeof url === 'string' ? url : url?.toString() || '';
       networkEventObj.data = {
         url: urlString,
@@ -181,8 +215,32 @@ class ProvidenceAgent {
         networkEventObj.data.responseReceivedAt = currentTime;
         networkEventObj.data.latency = currentTime - networkEventObj.data.requestMadeAt;
         networkEventObj.data.status = this.status;
+
+        console.log('[Agent] XHR completed:', {
+          url: networkEventObj.data.url,
+          status: networkEventObj.data.status,
+          latency: networkEventObj.data.latency
+        });
+
         self.events.push(networkEventObj);
-        console.log('XHR Request Captured:', networkEventObj);
+      });
+
+      this.addEventListener('error', function() {
+        console.log('[Agent] XHR error:', { 
+          url: networkEventObj.data.url,
+          method: networkEventObj.data.method 
+        });
+        networkEventObj.data.error = 'Network Error';
+        self.events.push(networkEventObj);
+      });
+
+      this.addEventListener('timeout', function() {
+        console.log('[Agent] XHR timeout:', {
+          url: networkEventObj.data.url,
+          method: networkEventObj.data.method
+        });
+        networkEventObj.data.error = 'Timeout';
+        self.events.push(networkEventObj);
       });
 
       return originalOpen.apply(this, args);
