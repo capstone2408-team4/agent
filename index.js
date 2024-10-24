@@ -1,4 +1,5 @@
 import * as rrweb from 'rrweb';
+import { getRecordConsolePlugin } from '@rrweb/rrweb-plugin-console-record';
 import { v4 as uuid } from 'uuid';
 
 class ProvidenceAgent {
@@ -63,6 +64,7 @@ class ProvidenceAgent {
           this.options.onEventRecorded(event);
         }
       },
+      plugins: [getRecordConsolePlugin()],
     });
 
     // Save events every 5 seconds
@@ -402,6 +404,7 @@ class ProvidenceAgent {
                 this.options.onEventRecorded(event);
               }
             },
+            plugins: [getRecordConsolePlugin()],
           });
   
           this.saveInterval = setInterval(() => this.sendBatch(), 5000);
