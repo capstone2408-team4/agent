@@ -16,6 +16,10 @@ class ProvidenceAgent {
     this.sessionID = uuid();
     this.boundVisibilityHandler = null;
 
+    // Track interceptor state
+    // Used to guard against having multiple timeout timers and visibility handlers firing
+    this.interceptorsReset = false;
+
     // Store original implementations before we override them
     // globalThis.fetch is an alias for window.fetch (gpt says it is 'best practice')
     this.originalFetch = window.fetch.bind(window);
@@ -95,6 +99,7 @@ class ProvidenceAgent {
 
     // Restore original network implementations
     this.restoreNetworkImplementations();
+    this.interceptorsReset = false;
 
     // Remove visibility change listener using stored bound handler
     if (this.boundVisibilityHandler) {
@@ -378,17 +383,25 @@ class ProvidenceAgent {
   
         // Send any pending events
         this.sendBatch();
-  
-        // Set up 15 second timer for full teardown minus visibility change listener
-        this.visibilityTimeout = setTimeout(() => {
-          console.log('[Agent] Visibility timeout reached - performing interceptor reset');
-          this.visibilityTimeout = null;
-  
-          // Restore original network implementations
-          this.restoreNetworkImplementations();
-  
-        }, this.VISIBILITY_TIMEOUT_MS);
-  
+
+        // Only set timeout if interceptors haven't been reset
+        if (!this.interceptorsReset) {
+          if (this.visibilityTimeout) {
+            clearTimeout(this.visibilityTimeout);
+          }
+
+          // Set up 15 second timer for full teardown minus visibility change listener
+          this.visibilityTimeout = setTimeout(() => {
+            console.log('[Agent] Visibility timeout reached - performing interceptor reset');
+            this.visibilityTimeout = null;
+    
+            // Restore original network implementations
+            this.restoreNetworkImplementations();
+            this.interceptorsReset = true;
+    
+          }, this.VISIBILITY_TIMEOUT_MS);
+        }
+
       } else if (document.visibilityState === 'visible') { // User has returned to the tab
         // Clear timeout if it exists
         if (this.visibilityTimeout) { // User returned before the timeout
@@ -411,6 +424,7 @@ class ProvidenceAgent {
         } else { // User returned after the timeout has passed
           console.log('[Agent] Visibility restored after timeout - starting new session');
           this.sessionID = uuid();
+          this.interceptorsReset = false;
           this.startRecord();
         }
       }
@@ -419,6 +433,7 @@ class ProvidenceAgent {
       // Attempt to restore to a known good state
       this.stopRecord();
       this.sessionID = uuid();
+      this.interceptorsReset = false;
       this.startRecord();
     }
   }
