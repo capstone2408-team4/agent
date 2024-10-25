@@ -15,6 +15,7 @@ class ProvidenceAgent {
     this.projectID = options.projectID;
     this.sessionID = uuid();
     this.boundVisibilityHandler = null;
+    this.AGENT_LOG_PREFIX = '[ProvidenceAgent:Internal]';
 
     // Track interceptor state
     // Used to guard against having multiple timeout timers and visibility handlers firing
@@ -40,7 +41,7 @@ class ProvidenceAgent {
 
     // Full cleanup on page unload
     window.addEventListener('unload', () => {
-      console.log('[Agent] Unloading page - stopping recording');
+      console.log(`${this.AGENT_LOG_PREFIX} Unloading page - stopping recording`);
       if (this.boundVisibilityHandler) {
         document.removeEventListener('visibilitychange', this.boundVisibilityHandler);
         this.boundVisibilityHandler = null;
@@ -49,9 +50,24 @@ class ProvidenceAgent {
     });
   }
 
+  isInternalConsoleEvent(event) {
+    if (event.type === 6) { // Console event type
+      const logData = event?.data?.payload?.payload?.[0];
+      // Remove any quotes and trim
+      const cleanedLogData = typeof logData === 'string' ? 
+        logData.replace(/^"+|"+$/g, '').trim() : logData;
+        
+      if (typeof cleanedLogData === 'string' && 
+          cleanedLogData.startsWith(this.AGENT_LOG_PREFIX)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   startRecord() {
     if (this.stopFn) {
-      console.warn('Recording is already in progress. Call stopRecord() before starting a new recording.');
+      console.warn(`${this.AGENT_LOG_PREFIX} Recording is already in progress. Call stopRecord() before starting a new recording.`);
       return;
     }
 
@@ -61,6 +77,11 @@ class ProvidenceAgent {
     // Start rrweb recording
     this.stopFn = rrweb.record({
       emit: (event) => {
+        // Filter out internal console logs
+        if (this.isInternalConsoleEvent(event)) {
+          return;
+        }
+
         this.events.push(event);
 
         // Optional callback to execute for each event recorded
@@ -78,7 +99,7 @@ class ProvidenceAgent {
     this.boundVisibilityHandler = this.handleVisibilityChange.bind(this);
     document.addEventListener('visibilitychange', this.boundVisibilityHandler);
 
-    console.log(`Started recording for session ${this.sessionID}`);
+    console.log(`${this.AGENT_LOG_PREFIX} Started recording for session ${this.sessionID}`);
   }
 
   stopRecord() {
@@ -110,7 +131,7 @@ class ProvidenceAgent {
     // Send any remaining events
     this.sendBatch();
 
-    console.log(`Stopped recording for session ${this.sessionID}`);
+    console.log(`${this.AGENT_LOG_PREFIX} Stopped recording for session ${this.sessionID}`);
   }
 
   initializeNetworkCapture() {
@@ -120,7 +141,7 @@ class ProvidenceAgent {
   }
 
   interceptFetch() {
-    console.log('[Agent] Setting up fetch interceptor');
+    console.log(`${this.AGENT_LOG_PREFIX} Setting up fetch interceptor`);
     window.fetch = async (...args) => {
       try {
         let [resource, config] = args;
@@ -130,7 +151,7 @@ class ProvidenceAgent {
           return this.originalFetch(resource, config);
         }
   
-        console.log('[Agent] Fetch intercepted:', {
+        console.log(`${this.AGENT_LOG_PREFIX} Fetch intercepted:`, {
           url: resource instanceof Request ? resource.url : resource,
           method: config?.method || 'GET'
         });
@@ -142,7 +163,7 @@ class ProvidenceAgent {
         const response = await this.originalFetch(resource, config);
         this.handleFetchResponse(response, networkEventObj);
   
-        console.log('[Agent] Fetch completed:', {
+        console.log(`${this.AGENT_LOG_PREFIX} Fetch completed:`, {
           url: networkEventObj.data.url,
           status: networkEventObj.data.status,
           latency: networkEventObj.data.latency
@@ -151,7 +172,7 @@ class ProvidenceAgent {
         this.events.push(networkEventObj);
         return response;
       } catch (error) {
-        console.error('[Agent] Error in fetch interceptor:', error);
+        console.error(`${this.AGENT_LOG_PREFIX} Error in fetch interceptor:`, error);
         // Log error event
         this.events.push({
           type: 50,
@@ -199,13 +220,13 @@ class ProvidenceAgent {
   }
 
   interceptXHR() {
-    console.log('[Agent] Setting up XHR interceptor');
     const self = this;
+    console.log(`${self.AGENT_LOG_PREFIX} Setting up XHR interceptor`);
     const originalOpen = this.originalXHROpen;
 
     XMLHttpRequest.prototype.open = function(...args) {
       const [method, url] = args;
-      console.log('[Agent] XHR intercepted:', { method, url });
+      console.log(`${self.AGENT_LOG_PREFIX} XHR intercepted:`, { method, url });
 
       const networkEventObj = { type: 50, data: {} };
       const urlString = typeof url === 'string' ? url : url?.toString() || '';
@@ -223,7 +244,7 @@ class ProvidenceAgent {
         networkEventObj.data.latency = currentTime - networkEventObj.data.requestMadeAt;
         networkEventObj.data.status = this.status;
 
-        console.log('[Agent] XHR completed:', {
+        console.log(`${self.AGENT_LOG_PREFIX} XHR completed:`, {
           url: networkEventObj.data.url,
           status: networkEventObj.data.status,
           latency: networkEventObj.data.latency
@@ -233,7 +254,7 @@ class ProvidenceAgent {
       });
 
       this.addEventListener('error', function() {
-        console.log('[Agent] XHR error:', { 
+        console.log(`${self.AGENT_LOG_PREFIX} XHR error:`, { 
           url: networkEventObj.data.url,
           method: networkEventObj.data.method 
         });
@@ -242,7 +263,7 @@ class ProvidenceAgent {
       });
 
       this.addEventListener('timeout', function() {
-        console.log('[Agent] XHR timeout:', {
+        console.log(`${self.AGENT_LOG_PREFIX} XHR timeout:`, {
           url: networkEventObj.data.url,
           method: networkEventObj.data.method
         });
@@ -255,18 +276,18 @@ class ProvidenceAgent {
   }
 
   interceptWebSocket() {
-    console.log('[Agent] Setting up WebSocket interceptor');
     const self = this;
+    console.log(`${self.AGENT_LOG_PREFIX} Setting up WebSocket interceptor`);
     const OriginalWebSocket = this.originalWebSocket;
 
     window.WebSocket = function(url, protocols) {
-      console.log('[Agent] WebSocket connection initiated:', { url, protocols });
+      console.log(`${self.AGENT_LOG_PREFIX} WebSocket connection initiated:`, { url, protocols });
 
       const ws = new OriginalWebSocket(url, protocols);
       const urlString = url.toString();
 
       ws.addEventListener('open', () => {
-        console.log('[Agent] WebSocket opened:', { url: urlString });
+        console.log(`${self.AGENT_LOG_PREFIX} WebSocket opened:`, { url: urlString });
         self.events.push({
           type: 50,
           timestamp: Date.now(),
@@ -279,7 +300,7 @@ class ProvidenceAgent {
       });
 
       ws.addEventListener('message', (event) => {
-        console.log('[Agent] WebSocket message received:', { 
+        console.log(`${self.AGENT_LOG_PREFIX} WebSocket message received:`, { 
           url: urlString, 
           dataType: typeof event.data,
           dataPreview: typeof event.data === 'string' ? 
@@ -299,7 +320,7 @@ class ProvidenceAgent {
       });
 
       ws.addEventListener('close', (event) => {
-        console.log('[Agent] WebSocket closed:', { 
+        console.log(`${self.AGENT_LOG_PREFIX} WebSocket closed:`, { 
           url: urlString,
           code: event.code,
           reason: event.reason
@@ -318,7 +339,7 @@ class ProvidenceAgent {
       });
 
       ws.addEventListener('error', (error) => {
-        console.log('[Agent] WebSocket error:', { 
+        console.log(`${self.AGENT_LOG_PREFIX} WebSocket error:`, { 
           url: urlString,
           error: error.message || 'Unknown error'
         });
@@ -337,7 +358,7 @@ class ProvidenceAgent {
 
       const originalSend = ws.send.bind(ws);
       ws.send = function(data) {
-        console.log('[Agent] WebSocket message sent:', {
+        console.log(`${self.AGENT_LOG_PREFIX} WebSocket message sent:`, {
           url: urlString,
           dataType: typeof data,
           dataPreview: typeof data === 'string' ? 
@@ -392,7 +413,7 @@ class ProvidenceAgent {
 
           // Set up 15 second timer for full teardown minus visibility change listener
           this.visibilityTimeout = setTimeout(() => {
-            console.log('[Agent] Visibility timeout reached - performing interceptor reset');
+            console.log(`${this.AGENT_LOG_PREFIX} Visibility timeout reached - performing interceptor reset`);
             this.visibilityTimeout = null;
     
             // Restore original network implementations
@@ -405,13 +426,17 @@ class ProvidenceAgent {
       } else if (document.visibilityState === 'visible') { // User has returned to the tab
         // Clear timeout if it exists
         if (this.visibilityTimeout) { // User returned before the timeout
-          console.log('[Agent] Visibility restored before timeout - continuing recording');
+          console.log(`${this.AGENT_LOG_PREFIX} Visibility restored before timeout - continuing recording`);
           clearTimeout(this.visibilityTimeout);
           this.visibilityTimeout = null;
   
           // Restart rrweb recording and save interval
           this.stopFn = rrweb.record({
             emit: (event) => {
+              if (this.isInternalConsoleEvent(event)) {
+                return;
+              }
+
               this.events.push(event);
               if (typeof this.options.onEventRecorded === 'function') {
                 this.options.onEventRecorded(event);
@@ -422,14 +447,14 @@ class ProvidenceAgent {
   
           this.saveInterval = setInterval(() => this.sendBatch(), 5000);
         } else { // User returned after the timeout has passed
-          console.log('[Agent] Visibility restored after timeout - starting new session');
+          console.log(`${this.AGENT_LOG_PREFIX} Visibility restored after timeout - starting new session`);
           this.sessionID = uuid();
           this.interceptorsReset = false;
           this.startRecord();
         }
       }
     } catch (error) {
-      console.error('[Agent] Error handling visibility change:', error);
+      console.error(`${this.AGENT_LOG_PREFIX} Error handling visibility change:`, error);
       // Attempt to restore to a known good state
       this.stopRecord();
       this.sessionID = uuid();
@@ -461,10 +486,10 @@ class ProvidenceAgent {
       if (!response.ok) {
         throw new Error(`HTTP error! Status: ${response.status}`);
       }
-      console.log(`Sent ${eventsToSend.length} events for session ${this.sessionID}`);
+      console.log(`${this.AGENT_LOG_PREFIX} Sent ${eventsToSend.length} events for session ${this.sessionID}`);
     })
     .catch(error => {
-      console.error('Error sending events batch:', error);
+      console.error(`${this.AGENT_LOG_PREFIX} Error sending events batch:`, error);
       // Add the events back to the queue for next try
       this.events = [...eventsToSend, ...this.events];
     });
