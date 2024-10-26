@@ -494,6 +494,68 @@ class ProvidenceAgent {
       this.events = [...eventsToSend, ...this.events];
     });
   }
+
+  async captureGeoEvent() {
+    try {
+      // Create the event and populate with userAgent info
+      const geoEvent = {
+        type: 51,
+        timestamp: Date.now(),
+        data: {
+          sessionID: this.sessionID,
+          url: window.location.href,
+          userAgent: {
+            raw: navigator.userAgent,
+            ...(navigator.userAgentData && {
+              mobile: navigator.userAgentData.mobile,
+              platform: navigator.userAgentData.platform,
+              brands: navigator.userAgentData.brands
+            })
+          }
+        }
+      };
+
+      // Proxy a request to the Providence backend for remaining geo data
+      const geoResponse = await this.originalFetch(`${this.options.backendUrl}/geo`, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json'
+        }
+      });
+
+      if (!geoResponse.ok) {
+        throw new Error(`Geo lookup failed: ${geoResponse.status}`);
+      }
+
+      const geoData = await geoResponse.json();
+
+      // Fill in the remaining event data
+      geoEvent.data.geo = {
+        ip: geoData.ip,
+        city: geoData.city,
+        region: geoData.region,
+        country: geoData.country,
+        timezone: geoData.timezone
+      };
+
+      console.log(`${this.AGENT_LOG_PREFIX} Captured geo event for session ${this.sessionID}`);
+      this.events.push(geoEvent);
+
+    } catch (error) {
+      console.error(`${this.AGENT_LOG_PREFIX} Error capturing geo event:`, error);
+      // If API call for full geo data fails, still send limited data
+      this.events.push({
+        type: 51,
+        timestamp: Date.now(),
+        data: {
+          sessionID: this.sessionID,
+          url: window.location.href,
+          userAgent: navigator.userAgent,
+          error: error.message
+        }
+      });
+    }
+  }
 }
 
 export default ProvidenceAgent;
