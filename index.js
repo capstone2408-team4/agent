@@ -71,6 +71,8 @@ class ProvidenceAgent {
       return;
     }
 
+    this.captureGeoEvent();
+
     // Initialize network capture
     this.initializeNetworkCapture();
 
@@ -497,13 +499,15 @@ class ProvidenceAgent {
 
   async captureGeoEvent() {
     try {
+      const eventTime = new Date();
       // Create the event and populate with userAgent info
       const geoEvent = {
         type: 51,
-        timestamp: Date.now(),
+        timestamp: eventTime.getTime(),
         data: {
           sessionID: this.sessionID,
           url: window.location.href,
+          datetime: eventTime.toISOString(),
           userAgent: {
             raw: navigator.userAgent,
             ...(navigator.userAgentData && {
@@ -515,16 +519,24 @@ class ProvidenceAgent {
         }
       };
 
+      // Geo request timeout 5s
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
       // Proxy a request to the Providence backend for remaining geo data
-      const geoResponse = await this.originalFetch(`${this.options.backendUrl}/geo`, {
+      const geoResponse = await this.originalFetch(`${this.options.backendUrl}/api/geo`, {
         method: 'GET',
         headers: {
-          'Accept': 'application/json'
-        }
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        signal: controller.signal
       });
 
+      clearTimeout(timeoutId);
+
       if (!geoResponse.ok) {
-        throw new Error(`Geo lookup failed: ${geoResponse.status}`);
+        throw new Error(`Geo lookup failed: ${geoResponse.status} ${geoResponse.statusText}`);
       }
 
       const geoData = await geoResponse.json();
@@ -533,25 +545,54 @@ class ProvidenceAgent {
       geoEvent.data.geo = {
         ip: geoData.ip,
         city: geoData.city,
-        region: geoData.region,
+        state: geoData.state,
         country: geoData.country,
-        timezone: geoData.timezone
+        latitude: geoData.latitude,
+        longitude: geoData.longitude,
+        timezone: geoData.timezone,
       };
 
       console.log(`${this.AGENT_LOG_PREFIX} Captured geo event for session ${this.sessionID}`);
       this.events.push(geoEvent);
 
     } catch (error) {
-      console.error(`${this.AGENT_LOG_PREFIX} Error capturing geo event:`, error);
-      // If API call for full geo data fails, still send limited data
+      // Timeout specific error handling
+      if (error.name === 'AbortError') {
+        console.error(`${this.AGENT_LOG_PREFIX} Geo request timed out`);
+      } else {
+        console.error(`${this.AGENT_LOG_PREFIX} Error capturing geo event:`, error);
+      }
+
+      // If API call fails, create event with limited data and an error prop
+      const eventTime = new Date();
       this.events.push({
         type: 51,
-        timestamp: Date.now(),
+        timestamp: eventTime.getTime(),
         data: {
           sessionID: this.sessionID,
           url: window.location.href,
-          userAgent: navigator.userAgent,
-          error: error.message
+          datetime: eventTime.toISOString(),
+          userAgent: {
+            raw: navigator.userAgent,
+            ...(navigator.userAgentData && {
+              mobile: navigator.userAgentData.mobile,
+              platform: navigator.userAgentData.platform,
+              brands: navigator.userAgentData.brands
+            })
+          },
+          geo: {
+            ip: 'Unknown',
+            city: 'Unknown',
+            state: 'Unknown',
+            country: 'Unknown',
+            latitude: 'Unknown',
+            longitude: 'Unknown',
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Unknown'
+          },
+          error: {
+            message: error.message,
+            type: error.name
+          }
         }
       });
     }
