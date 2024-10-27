@@ -148,8 +148,10 @@ class ProvidenceAgent {
       try {
         let [resource, config] = args;
 
-        // Don't capture our own recording requests
-        if (resource === this.options.backendUrl) {
+        const url = resource instanceof Request ? resource.url : resource.toString();
+
+        // Don't capture Providence API requests
+        if (url.startsWith(this.options.backendUrl)) {
           return this.originalFetch(resource, config);
         }
   
@@ -228,6 +230,12 @@ class ProvidenceAgent {
 
     XMLHttpRequest.prototype.open = function(...args) {
       const [method, url] = args;
+
+      // Don't capture Providence API requests
+      if (typeof url === 'string' && url.startsWith(self.options.backendUrl)) {
+        return originalOpen.apply(this, args);
+      }
+
       console.log(`${self.AGENT_LOG_PREFIX} XHR intercepted:`, { method, url });
 
       const networkEventObj = { type: 50, data: {} };
