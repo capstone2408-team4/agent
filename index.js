@@ -27,6 +27,11 @@ class ProvidenceAgent {
     this.originalXHROpen = XMLHttpRequest.prototype.open;
     this.originalWebSocket = window.WebSocket;
 
+    // Inactivity config
+    this.INACTIVITY_TIMEOUT = 30 * 1000; // 30 seconds in milliseconds
+    this.inactivityTimeout = null;
+    this.lastActivityTime = Date.now();
+
     // Visibility config
     if (this.visibilityTimeout) {
       clearTimeout(this.visibilityTimeout);
@@ -45,6 +50,10 @@ class ProvidenceAgent {
       if (this.boundVisibilityHandler) {
         document.removeEventListener('visibilitychange', this.boundVisibilityHandler);
         this.boundVisibilityHandler = null;
+      }
+      if (this.inactivityTimeout) {
+        clearTimeout(this.inactivityTimeout);
+        this.inactivityTimeout = null;
       }
       this.stopRecord();
     });
@@ -95,6 +104,9 @@ class ProvidenceAgent {
     // Save events every 5 seconds
     this.saveInterval = setInterval(() => this.sendBatch(), 5000);
 
+    // Initialize inactivity detection
+    this.initializeInactivityDetection();
+
     // Handle visibility changes with stored bound handler
     this.boundVisibilityHandler = this.handleVisibilityChange.bind(this);
     document.addEventListener('visibilitychange', this.boundVisibilityHandler);
@@ -103,6 +115,11 @@ class ProvidenceAgent {
   }
 
   stopRecord() {
+    if (this.inactivityTimeout) {
+      clearTimeout(this.inactivityTimeout);
+      this.inactivityTimeout = null;
+    }
+
     if (this.visibilityTimeout) {
       clearTimeout(this.visibilityTimeout);
       this.visibilityTimeout = null;
@@ -132,6 +149,57 @@ class ProvidenceAgent {
     this.sendBatch();
 
     console.log(`${this.AGENT_LOG_PREFIX} Stopped recording for session ${this.sessionID}`);
+  }
+
+  initializeInactivityDetection() {
+    // Clear any existing timeout
+    if (this.inactivityTimeout) {
+      clearTimeout(this.inactivityTimeout);
+    }
+
+    const resetInactivityTimeout = () => {
+      this.lastActivityTime = Date.now();
+
+      if (this.inactivityTimeout) {
+        clearTimeout(this.inactivityTimeout);
+      }
+
+      this.inactivityTimeout = setTimeout(() => {
+        if (document.visibilityState === 'visible') {
+          console.log(`${this.AGENT_LOG_PREFIX} User inactive for ${this.INACTIVITY_TIMEOUT / 1000} seconds - ending session`);
+          this.handleInacitivityTimeout();
+        }
+      }, this.INACTIVITY_TIMEOUT);
+    };
+
+    // Set up event listeners for user activity
+    const activityEvents = [
+      'mousedown',
+      'keydown',
+      'mousemove',
+      'touchstart',
+      'click',
+      'scroll',
+      'input'
+    ];
+
+    activityEvents.forEach(event => {
+      document.removeEventListener(event, resetInactivityTimeout);
+    });
+
+    activityEvents.forEach(event => {
+      document.addEventListener(event, resetInactivityTimeout, { passive: true });
+    });
+
+    resetInactivityTimeout();
+  }
+
+  handleInacitivityTimeout() {
+    this.stopRecord();
+    this.sendBatch();
+    this.sessionID = uuid();
+    this.interceptorsReset = false;
+    this.startRecord();
   }
 
   initializeNetworkCapture() {
@@ -391,6 +459,12 @@ class ProvidenceAgent {
   handleVisibilityChange() {
     try {
       if (document.visibilityState === 'hidden') { // User has switched tabs or minimized window
+        // Clear inactivity timer
+        if (this.inactivityTimeout) {
+          clearTimeout(this.inactivityTimeout);
+          this.inactivityTimeout = null;
+        }
+        
         // Pause recording but keep interceptors alive
         if (this.stopFn) {
           this.stopFn();
@@ -446,6 +520,9 @@ class ProvidenceAgent {
           });
   
           this.saveInterval = setInterval(() => this.sendBatch(), 5000);
+
+          this.initializeInactivityDetection();
+
         } else { // User returned after the timeout has passed
           console.log(`${this.AGENT_LOG_PREFIX} Visibility restored after timeout - starting new session`);
           this.sessionID = uuid();
