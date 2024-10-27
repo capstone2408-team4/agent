@@ -190,11 +190,43 @@ class ProvidenceAgent {
   }
 
   handleInactivityTimeout() {
+    console.log(`${this.AGENT_LOG_PREFIX} Session ended due to inactivity`);
     this.stopRecord();
     this.sendBatch();
     this.sessionID = uuid();
     this.interceptorsReset = false;
-    this.startRecord();
+
+    // One-time activity detection restart
+    const startOnActivity = () => {
+      console.log(`${this.AGENT_LOG_PREFIX} User active - starting new session`);
+      this.startRecord();
+
+      // Remove all one-time listeners
+      [
+        'mousedown',
+        'keydown',
+        'mousemove',
+        'touchstart',
+        'click',
+        'scroll',
+        'input'
+      ].forEach(event => {
+        document.removeEventListener(event, startOnActivity);
+      });
+    };
+
+    // Add one-time activity listeners
+    [
+      'mousedown',
+      'keydown',
+      'mousemove',
+      'touchstart',
+      'click',
+      'scroll',
+      'input'
+    ].forEach(event => {
+      document.addEventListener(event, startOnActivity, { passive: true, once: true });
+    });
   }
 
   initializeNetworkCapture() {
