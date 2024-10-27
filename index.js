@@ -477,7 +477,7 @@ class ProvidenceAgent {
       events: eventsToSend
     });
 
-    this.originalFetch(this.options.backendUrl, {
+    this.originalFetch(`${this.options.backendUrl}/api/record`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
