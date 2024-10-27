@@ -80,7 +80,6 @@ class ProvidenceAgent {
       return;
     }
 
-    // Initialize network capture
     this.initializeNetworkCapture();
 
     // Start rrweb recording
@@ -104,7 +103,6 @@ class ProvidenceAgent {
     // Save events every 5 seconds
     this.saveInterval = setInterval(() => this.sendBatch(), 5000);
 
-    // Initialize inactivity detection
     this.initializeInactivityDetection();
 
     // Handle visibility changes with stored bound handler
