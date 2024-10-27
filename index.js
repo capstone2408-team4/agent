@@ -32,7 +32,7 @@ class ProvidenceAgent {
       clearTimeout(this.visibilityTimeout);
     }
     this.visibilityTimeout = null;
-    this.VISIBILITY_TIMEOUT_MS = 15000; // 15 seconds in milliseconds
+    this.VISIBILITY_TIMEOUT = 15 * 1000; // 15 seconds in milliseconds
 
     // Cleanup any existing intervals
     if (this.saveInterval) {
@@ -420,7 +420,7 @@ class ProvidenceAgent {
             this.restoreNetworkImplementations();
             this.interceptorsReset = true;
     
-          }, this.VISIBILITY_TIMEOUT_MS);
+          }, this.VISIBILITY_TIMEOUT);
         }
 
       } else if (document.visibilityState === 'visible') { // User has returned to the tab
