@@ -30,7 +30,6 @@ class ProvidenceAgent {
     // Inactivity config
     this.INACTIVITY_TIMEOUT = 30 * 1000; // 30 seconds in milliseconds
     this.inactivityTimeout = null;
-    this.lastActivityTime = Date.now();
 
     // Visibility config
     if (this.visibilityTimeout) {
@@ -156,8 +155,6 @@ class ProvidenceAgent {
     }
 
     const resetInactivityTimeout = () => {
-      this.lastActivityTime = Date.now();
-
       if (this.inactivityTimeout) {
         clearTimeout(this.inactivityTimeout);
       }
@@ -165,7 +162,7 @@ class ProvidenceAgent {
       this.inactivityTimeout = setTimeout(() => {
         if (document.visibilityState === 'visible') {
           console.log(`${this.AGENT_LOG_PREFIX} User inactive for ${this.INACTIVITY_TIMEOUT / 1000} seconds - ending session`);
-          this.handleInacitivityTimeout();
+          this.handleInactivityTimeout();
         }
       }, this.INACTIVITY_TIMEOUT);
     };
@@ -192,7 +189,7 @@ class ProvidenceAgent {
     resetInactivityTimeout();
   }
 
-  handleInacitivityTimeout() {
+  handleInactivityTimeout() {
     this.stopRecord();
     this.sendBatch();
     this.sessionID = uuid();
