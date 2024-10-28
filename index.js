@@ -27,12 +27,16 @@ class ProvidenceAgent {
     this.originalXHROpen = XMLHttpRequest.prototype.open;
     this.originalWebSocket = window.WebSocket;
 
+    // Inactivity config
+    this.INACTIVITY_TIMEOUT = 30 * 1000; // 30 seconds in milliseconds
+    this.inactivityTimeout = null;
+
     // Visibility config
     if (this.visibilityTimeout) {
       clearTimeout(this.visibilityTimeout);
     }
     this.visibilityTimeout = null;
-    this.VISIBILITY_TIMEOUT_MS = 15000; // 15 seconds in milliseconds
+    this.VISIBILITY_TIMEOUT = 15 * 1000; // 15 seconds in milliseconds
 
     // Cleanup any existing intervals
     if (this.saveInterval) {
@@ -45,6 +49,10 @@ class ProvidenceAgent {
       if (this.boundVisibilityHandler) {
         document.removeEventListener('visibilitychange', this.boundVisibilityHandler);
         this.boundVisibilityHandler = null;
+      }
+      if (this.inactivityTimeout) {
+        clearTimeout(this.inactivityTimeout);
+        this.inactivityTimeout = null;
       }
       this.stopRecord();
     });
@@ -73,7 +81,6 @@ class ProvidenceAgent {
 
     this.captureGeoEvent();
 
-    // Initialize network capture
     this.initializeNetworkCapture();
 
     // Start rrweb recording
@@ -97,6 +104,8 @@ class ProvidenceAgent {
     // Save events every 5 seconds
     this.saveInterval = setInterval(() => this.sendBatch(), 5000);
 
+    this.initializeInactivityDetection();
+
     // Handle visibility changes with stored bound handler
     this.boundVisibilityHandler = this.handleVisibilityChange.bind(this);
     document.addEventListener('visibilitychange', this.boundVisibilityHandler);
@@ -105,6 +114,11 @@ class ProvidenceAgent {
   }
 
   stopRecord() {
+    if (this.inactivityTimeout) {
+      clearTimeout(this.inactivityTimeout);
+      this.inactivityTimeout = null;
+    }
+
     if (this.visibilityTimeout) {
       clearTimeout(this.visibilityTimeout);
       this.visibilityTimeout = null;
@@ -134,6 +148,87 @@ class ProvidenceAgent {
     this.sendBatch();
 
     console.log(`${this.AGENT_LOG_PREFIX} Stopped recording for session ${this.sessionID}`);
+  }
+
+  initializeInactivityDetection() {
+    // Clear any existing timeout
+    if (this.inactivityTimeout) {
+      clearTimeout(this.inactivityTimeout);
+    }
+
+    const resetInactivityTimeout = () => {
+      if (this.inactivityTimeout) {
+        clearTimeout(this.inactivityTimeout);
+      }
+
+      this.inactivityTimeout = setTimeout(() => {
+        if (document.visibilityState === 'visible') {
+          console.log(`${this.AGENT_LOG_PREFIX} User inactive for ${this.INACTIVITY_TIMEOUT / 1000} seconds - ending session`);
+          this.handleInactivityTimeout();
+        }
+      }, this.INACTIVITY_TIMEOUT);
+    };
+
+    // Set up event listeners for user activity
+    const activityEvents = [
+      'mousedown',
+      'keydown',
+      'mousemove',
+      'touchstart',
+      'click',
+      'scroll',
+      'input'
+    ];
+
+    activityEvents.forEach(event => {
+      document.removeEventListener(event, resetInactivityTimeout);
+    });
+
+    activityEvents.forEach(event => {
+      document.addEventListener(event, resetInactivityTimeout, { passive: true });
+    });
+
+    resetInactivityTimeout();
+  }
+
+  handleInactivityTimeout() {
+    console.log(`${this.AGENT_LOG_PREFIX} Session ended due to inactivity`);
+    this.stopRecord();
+    this.sendBatch();
+    this.sessionID = uuid();
+    this.interceptorsReset = false;
+
+    // One-time activity detection restart
+    const startOnActivity = () => {
+      console.log(`${this.AGENT_LOG_PREFIX} User active - starting new session`);
+      this.startRecord();
+
+      // Remove all one-time listeners
+      [
+        'mousedown',
+        'keydown',
+        'mousemove',
+        'touchstart',
+        'click',
+        'scroll',
+        'input'
+      ].forEach(event => {
+        document.removeEventListener(event, startOnActivity);
+      });
+    };
+
+    // Add one-time activity listeners
+    [
+      'mousedown',
+      'keydown',
+      'mousemove',
+      'touchstart',
+      'click',
+      'scroll',
+      'input'
+    ].forEach(event => {
+      document.addEventListener(event, startOnActivity, { passive: true, once: true });
+    });
   }
 
   initializeNetworkCapture() {
@@ -401,6 +496,12 @@ class ProvidenceAgent {
   handleVisibilityChange() {
     try {
       if (document.visibilityState === 'hidden') { // User has switched tabs or minimized window
+        // Clear inactivity timer
+        if (this.inactivityTimeout) {
+          clearTimeout(this.inactivityTimeout);
+          this.inactivityTimeout = null;
+        }
+        
         // Pause recording but keep interceptors alive
         if (this.stopFn) {
           this.stopFn();
@@ -430,7 +531,7 @@ class ProvidenceAgent {
             this.restoreNetworkImplementations();
             this.interceptorsReset = true;
     
-          }, this.VISIBILITY_TIMEOUT_MS);
+          }, this.VISIBILITY_TIMEOUT);
         }
 
       } else if (document.visibilityState === 'visible') { // User has returned to the tab
@@ -456,6 +557,9 @@ class ProvidenceAgent {
           });
   
           this.saveInterval = setInterval(() => this.sendBatch(), 5000);
+
+          this.initializeInactivityDetection();
+
         } else { // User returned after the timeout has passed
           console.log(`${this.AGENT_LOG_PREFIX} Visibility restored after timeout - starting new session`);
           this.sessionID = uuid();
