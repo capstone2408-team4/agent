@@ -71,6 +71,8 @@ class ProvidenceAgent {
       return;
     }
 
+    this.captureGeoEvent();
+
     // Initialize network capture
     this.initializeNetworkCapture();
 
@@ -146,8 +148,10 @@ class ProvidenceAgent {
       try {
         let [resource, config] = args;
 
-        // Don't capture our own recording requests
-        if (resource === this.options.backendUrl) {
+        const url = resource instanceof Request ? resource.url : resource.toString();
+
+        // Don't capture Providence API requests
+        if (url.startsWith(this.options.backendUrl)) {
           return this.originalFetch(resource, config);
         }
   
@@ -226,6 +230,12 @@ class ProvidenceAgent {
 
     XMLHttpRequest.prototype.open = function(...args) {
       const [method, url] = args;
+
+      // Don't capture Providence API requests
+      if (typeof url === 'string' && url.startsWith(self.options.backendUrl)) {
+        return originalOpen.apply(this, args);
+      }
+
       console.log(`${self.AGENT_LOG_PREFIX} XHR intercepted:`, { method, url });
 
       const networkEventObj = { type: 50, data: {} };
@@ -475,7 +485,7 @@ class ProvidenceAgent {
       events: eventsToSend
     });
 
-    this.originalFetch(this.options.backendUrl, {
+    this.originalFetch(`${this.options.backendUrl}/api/record`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -493,6 +503,107 @@ class ProvidenceAgent {
       // Add the events back to the queue for next try
       this.events = [...eventsToSend, ...this.events];
     });
+  }
+
+  async captureGeoEvent() {
+    try {
+      const eventTime = new Date();
+      // Create the event and populate with userAgent info
+      const geoEvent = {
+        type: 51,
+        timestamp: eventTime.getTime(),
+        data: {
+          sessionID: this.sessionID,
+          url: window.location.href,
+          datetime: eventTime.toISOString(),
+          userAgent: {
+            raw: navigator.userAgent,
+            ...(navigator.userAgentData && {
+              mobile: navigator.userAgentData.mobile,
+              platform: navigator.userAgentData.platform,
+              brands: navigator.userAgentData.brands
+            })
+          }
+        }
+      };
+
+      // Geo request timeout 5s
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+      // Proxy a request to the Providence backend for remaining geo data
+      const geoResponse = await this.originalFetch(`${this.options.backendUrl}/api/geo`, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!geoResponse.ok) {
+        throw new Error(`Geo lookup failed: ${geoResponse.status} ${geoResponse.statusText}`);
+      }
+
+      const geoData = await geoResponse.json();
+
+      // Fill in the remaining event data
+      geoEvent.data.geo = {
+        ip: geoData.ip,
+        city: geoData.city,
+        state: geoData.state,
+        country: geoData.country,
+        latitude: geoData.latitude,
+        longitude: geoData.longitude,
+        timezone: geoData.timezone,
+      };
+
+      console.log(`${this.AGENT_LOG_PREFIX} Captured geo event for session ${this.sessionID}`);
+      this.events.push(geoEvent);
+
+    } catch (error) {
+      // Timeout specific error handling
+      if (error.name === 'AbortError') {
+        console.error(`${this.AGENT_LOG_PREFIX} Geo request timed out`);
+      } else {
+        console.error(`${this.AGENT_LOG_PREFIX} Error capturing geo event:`, error);
+      }
+
+      // If API call fails, create event with limited data and an error prop
+      const eventTime = new Date();
+      this.events.push({
+        type: 51,
+        timestamp: eventTime.getTime(),
+        data: {
+          sessionID: this.sessionID,
+          url: window.location.href,
+          datetime: eventTime.toISOString(),
+          userAgent: {
+            raw: navigator.userAgent,
+            ...(navigator.userAgentData && {
+              mobile: navigator.userAgentData.mobile,
+              platform: navigator.userAgentData.platform,
+              brands: navigator.userAgentData.brands
+            })
+          },
+          geo: {
+            ip: 'Unknown',
+            city: 'Unknown',
+            state: 'Unknown',
+            country: 'Unknown',
+            latitude: 'Unknown',
+            longitude: 'Unknown',
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Unknown'
+          },
+          error: {
+            message: error.message,
+            type: error.name
+          }
+        }
+      });
+    }
   }
 }
 
