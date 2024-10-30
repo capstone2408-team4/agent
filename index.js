@@ -98,6 +98,7 @@ class ProvidenceAgent {
           this.options.onEventRecorded(event);
         }
       },
+      maskAllInputs: true,
       plugins: [getRecordConsolePlugin()],
     });
 
@@ -553,6 +554,7 @@ class ProvidenceAgent {
                 this.options.onEventRecorded(event);
               }
             },
+            maskAllInputs: true,
             plugins: [getRecordConsolePlugin()],
           });
   
