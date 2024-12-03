@@ -642,7 +642,8 @@ class ProvidenceAgent {
         method: 'GET',
         headers: {
           'Accept': 'application/json',
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'X-Providence-Project-ID': this.projectID
         },
         signal: controller.signal
       });
