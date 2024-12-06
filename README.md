@@ -8,7 +8,7 @@ Before installing the agent:
 
 1. Ensure you've gone through the infrastructure [installation guide](https://github.com/providence-replay/providence/blob/main/README.md) (using either the local option or the AWS option)
 2. Note the URL to your Providence API (or ALB if using the AWS option)
-3. Log in to the dashboard and note your project ID
+3. Log in to the dashboard to obtain your project ID
 
 ## Installation
 
@@ -94,8 +94,8 @@ See [rrweb documentation](https://github.com/rrweb-io/rrweb/blob/master/guide.md
 The agent automatically:
 - Generates unique session IDs
 - Handles page visibility changes
-- Detects user inactivity (30s timeout)
-- Batches events (5s intervals)
+- Detects user inactivity (5 minute timeout)
+- Batches events (5 second intervals)
 - Restarts on user activity
 
 ## Network Capture
