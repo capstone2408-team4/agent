@@ -18,6 +18,10 @@ npm install github:providence-replay/agent
 
 ## Quick Start
 
+The framework and libraries used by your app may influence the syntax of this code. For example a React application may benefit from wrapping `startRecording()` in a useEffect hook.
+
+In the app to be instrumented, add:
+
 ```javascript
 import ProvidenceAgent from 'agent';
 
