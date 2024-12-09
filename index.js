@@ -28,7 +28,7 @@ class ProvidenceAgent {
     this.originalWebSocket = window.WebSocket;
 
     // Inactivity config
-    this.INACTIVITY_TIMEOUT = 30 * 1000; // 30 seconds in milliseconds
+    this.INACTIVITY_TIMEOUT = 3 * 60 * 1000; // 3 minutes in milliseconds
     this.inactivityTimeout = null;
 
     // Visibility config
@@ -36,7 +36,7 @@ class ProvidenceAgent {
       clearTimeout(this.visibilityTimeout);
     }
     this.visibilityTimeout = null;
-    this.VISIBILITY_TIMEOUT = 15 * 1000; // 15 seconds in milliseconds
+    this.VISIBILITY_TIMEOUT = 1 * 60 * 1000; // 1 minute in milliseconds
 
     // Cleanup any existing intervals
     if (this.saveInterval) {
@@ -523,7 +523,7 @@ class ProvidenceAgent {
             clearTimeout(this.visibilityTimeout);
           }
 
-          // Set up 15 second timer for full teardown minus visibility change listener
+          // Set up 1 minute timer for full teardown minus visibility change listener
           this.visibilityTimeout = setTimeout(() => {
             console.log(`${this.AGENT_LOG_PREFIX} Visibility timeout reached - performing interceptor reset`);
             this.visibilityTimeout = null;
