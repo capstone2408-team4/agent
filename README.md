@@ -1,6 +1,6 @@
 # Providence Agent
 
-This package provides session replay capabilities for the Providence framework using [rrweb](https://github.com/rrweb-io/rrweb). It captures detailed user interactions including DOM mutations, mouse movements, scrolling, network requests, and console output while respecting user privacy through automatic input masking.
+This package provides session recording capabilities for the Providence framework using [rrweb](https://github.com/rrweb-io/rrweb). It captures detailed user interactions including DOM mutations, mouse movements, scrolling, network requests, and console output while respecting user privacy through automatic input masking.
 
 ## Prerequisites
 
