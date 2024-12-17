@@ -93,10 +93,10 @@ See [rrweb documentation](https://github.com/rrweb-io/rrweb/blob/master/guide.md
 
 The agent automatically:
 - Generates unique session IDs
-- Handles page visibility changes
-- Detects user inactivity (30s timeout)
+- Handles page visibility changes (60s timeout for hidden tab)
+- Detects user inactivity (180s timeout)
 - Batches events (5s intervals)
-- Restarts on user activity
+- Seamlessly restarts on resumption of user activity or tab visibility
 
 ## Network Capture
 
